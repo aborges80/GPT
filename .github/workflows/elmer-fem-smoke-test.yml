@@ -1,0 +1,128 @@
+name: Elmer FEM - solver e malha (teste publico generico)
+
+on:
+  push:
+    branches:
+      - tools/elmer-fem-validation
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  elmer-smoke-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Preparar caso aberto de verificacao (sem dados ELIOTH)
+        shell: bash
+        run: |
+          mkdir -p smoke
+          cat > smoke/plate.grd <<'EOF'
+          Version = 210903
+          Coordinate System = Cartesian 2D
+          Subcell Divisions in 2D = 1 1
+          Subcell Limits 1 = 0 1
+          Subcell Limits 2 = 0 1
+          Material Structure in 2D
+          1
+          End
+          Materials Interval = 1 1
+          Boundary Definitions
+          1 -3 1 1
+          2 -4 1 1
+          3 -1 1 1
+          4 -2 1 1
+          End
+          Numbering = Horizontal
+          Element Degree = 1
+          Element Innernodes = False
+          Surface Elements = 400
+          EOF
+          cat > smoke/plate.sif <<'EOF'
+          Header
+            CHECK KEYWORDS Warn
+            Mesh DB "." "mesh"
+          End
+          Simulation
+            Max Output Level = 4
+            Coordinate System = "Cartesian 2D"
+            Simulation Type = "Steady State"
+            Steady State Max Iterations = 1
+            Output Intervals = 1
+            Post File = "plate.ep"
+          End
+          Body 1
+            Equation = 1
+            Material = 1
+          End
+          Equation 1
+            Active Solvers(1) = 1
+          End
+          Solver 1
+            Equation = "Stat Current Solver"
+            Procedure = "StatCurrentSolve" "StatCurrentSolver"
+            Variable = "Potential"
+            Variable DOFs = 1
+            Calculate Volume Current = Logical True
+            Linear System Solver = "Iterative"
+            Linear System Iterative Method = "BiCGStab"
+            Linear System Max Iterations = 500
+            Linear System Convergence Tolerance = 1.0e-8
+            Linear System Preconditioning = "ILU0"
+            Linear System Abort Not Converged = Logical True
+          End
+          Material 1
+            Electric Conductivity = 1.0
+          End
+          Boundary Condition 1
+            Target Boundaries(1) = 1
+            Potential = 1.0
+          End
+          Boundary Condition 2
+            Target Boundaries(1) = 2
+            Potential = 0.0
+          End
+          EOF
+
+      - name: Instalar solver e grid no runner via container publico
+        run: docker pull ghcr.io/femforge-io/femforge-elmer:0.2.0
+
+      - name: Confirmar ElmerSolver e ElmerGrid
+        run: |
+          docker run --rm --entrypoint sh ghcr.io/femforge-io/femforge-elmer:0.2.0 -c 'set -eu; command -v ElmerSolver; command -v ElmerGrid'
+
+      - name: Gerar malha com ElmerGrid
+        working-directory: smoke
+        run: |
+          docker run --rm -v "$PWD":/case -w /case ghcr.io/femforge-io/femforge-elmer:0.2.0 \
+             ElmerGrid 1 2 plate.grd -out mesh 2>&1 | tee grid.log
+          test -s mesh/mesh.header
+
+      - name: Resolver conducao estatica com ElmerSolver
+        working-directory: smoke
+        run: |
+          set -o pipefail
+          docker run --rm -v "$PWD":/case -w /case ghcr.io/femforge-io/femforge-elmer:0.2.0 \
+             ElmerSolver plate.sif 2>&1 | tee solver.log
+          test -s solver.log
+
+      - name: Arquivar logs e resultados
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: elmer-solver-grid-smoke-test
+          path: |
+            smoke/plate.grd
+            smoke/plate.sif
+            smoke/mesh/
+            smoke/grid.log
+            smoke/solver.log
+            smoke/plate.ep
+          if-no-files-found: warn
