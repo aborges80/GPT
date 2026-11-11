@@ -1,1 +1,0 @@
-(fp_lib_table (lib (name "ELIOTH") (type "KiCad") (uri "${KIPRJMOD}/ELIOTH.pretty") (options "") (descr "ELIOTH local through-hole footprints")))
