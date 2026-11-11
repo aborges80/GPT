@@ -26,6 +26,10 @@ jobs:
           kicad-cli pcb drc -o validation/DRC.txt "${BASE}.kicad_pcb" || true
           kicad-cli sch export pdf -o validation/ELIOTH_HV01_esquematico.pdf "${BASE}.kicad_sch" || true
           kicad-cli pcb export svg -l F.Cu,B.Cu,Edge.Cuts,F.SilkS -o validation/ "${BASE}.kicad_pcb" || true
+      - name: Package editable KiCad project
+        run: |
+          mkdir -p validation
+          zip -r validation/ELIOTH_HV01_KiCad.zip elioth/hv01_ctrl_9-12V/ -x "*.DS_Store"
       - name: Upload review artifacts
         uses: actions/upload-artifact@v4
         with:
